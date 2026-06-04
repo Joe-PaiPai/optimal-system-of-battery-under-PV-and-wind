@@ -21,7 +21,10 @@ build/
 # Logs
 *.log
 
+# Generated examples
+examples/*_result.csv
+outputs/*.csv
+
 # Local secrets
 .env
 .env.*
-

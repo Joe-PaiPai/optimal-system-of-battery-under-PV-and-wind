@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>风光储优化调度</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">储能规划系统</p>
+          <h1>风光储自发自用优化</h1>
+        </div>
+        <div class="status-pill" id="statusText">示例数据</div>
+      </header>
+
+      <section class="workspace">
+        <aside class="settings-panel" id="settingsPanel">
+          <div class="panel-header">
+            <h2>参数</h2>
+            <button class="icon-button" id="resetButton" type="button" title="重置参数" aria-label="重置参数">
+              ↺
+            </button>
+          </div>
+
+          <label class="field">
+            <span>储能容量 kWh</span>
+            <input id="capacity" type="number" value="100" min="1" step="1" />
+          </label>
+          <label class="field">
+            <span>最大充电功率 kW</span>
+            <input id="maxCharge" type="number" value="50" min="1" step="1" />
+          </label>
+          <label class="field">
+            <span>最大放电功率 kW</span>
+            <input id="maxDischarge" type="number" value="50" min="1" step="1" />
+          </label>
+          <label class="field">
+            <span>初始 SOC kWh</span>
+            <input id="initialSoc" type="number" value="50" min="0" step="1" />
+          </label>
+          <label class="field">
+            <span>最小 SOC kWh</span>
+            <input id="minSoc" type="number" value="10" min="0" step="1" />
+          </label>
+          <label class="field">
+            <span>充电效率</span>
+            <input id="chargeEff" type="number" value="0.95" min="0.01" max="1" step="0.01" />
+          </label>
+          <label class="field">
+            <span>放电效率</span>
+            <input id="dischargeEff" type="number" value="0.95" min="0.01" max="1" step="0.01" />
+          </label>
+          <label class="field">
+            <span>时间步长 h</span>
+            <input id="dtHours" type="number" value="1" min="0.01" step="0.25" />
+          </label>
+        </aside>
+
+        <section class="main-panel">
+          <div class="toolbar">
+            <label class="compact-field">
+              <span>范围</span>
+              <select id="rangeSelect">
+                <option value="24">24小时</option>
+                <option value="168">7天</option>
+                <option value="8760">全年</option>
+                <option value="all">全部</option>
+              </select>
+            </label>
+
+            <label class="file-button">
+              导入CSV
+              <input id="csvInput" type="file" accept=".csv" />
+            </label>
+            <button class="soft-button" id="sampleButton" type="button">示例数据</button>
+            <button class="primary-button" id="runButton" type="button">自动报价</button>
+            <button class="soft-button" id="exportButton" type="button">导出结果</button>
+            <button class="soft-button" id="toggleSettingsButton" type="button">隐藏参数</button>
+          </div>
+
+          <section class="metrics-grid" aria-label="调度指标">
+            <article class="metric">
+              <span>上网电量</span>
+              <strong id="exportTotal">0.00</strong>
+              <small>kWh</small>
+            </article>
+            <article class="metric">
+              <span>下网电量</span>
+              <strong id="importTotal">0.00</strong>
+              <small>kWh</small>
+            </article>
+            <article class="metric">
+              <span>充电电量</span>
+              <strong id="chargeTotal">0.00</strong>
+              <small>kWh</small>
+            </article>
+            <article class="metric">
+              <span>放电电量</span>
+              <strong id="dischargeTotal">0.00</strong>
+              <small>kWh</small>
+            </article>
+          </section>
+
+          <section class="chart-panel">
+            <canvas id="dispatchChart" width="1100" height="360"></canvas>
+          </section>
+
+          <section class="table-panel">
+            <div class="table-title">
+              <h2>调度结果</h2>
+              <span id="rowCount">0 行</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时段</th>
+                    <th>光伏</th>
+                    <th>风电</th>
+                    <th>负荷</th>
+                    <th>储能电量</th>
+                    <th>SOC 起</th>
+                    <th>SOC 止</th>
+                    <th>上网</th>
+                    <th>下网</th>
+                  </tr>
+                </thead>
+                <tbody id="resultBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
+

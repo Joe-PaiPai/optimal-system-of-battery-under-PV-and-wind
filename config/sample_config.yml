@@ -1,0 +1,22 @@
+# Input and output paths are relative to this config file.
+input_csv: ../examples/sample_timeseries.csv
+output_csv: ../outputs/sample_result.csv
+
+storage:
+  capacity_kwh: 100
+  max_charge_kw: 50
+  max_discharge_kw: 50
+  initial_soc_kwh: 50
+  min_soc_kwh: 10
+  charge_efficiency: 0.95
+  discharge_efficiency: 0.95
+  dt_hours: 1
+
+objective:
+  # Higher value means grid export is minimized before grid import.
+  export_priority_weight: 1000
+
+constraints:
+  # true: final SOC must equal initial SOC.
+  # false: final SOC can be different.
+  enforce_terminal_soc: true
