@@ -61,6 +61,15 @@
 
         <section class="main-panel">
           <div class="toolbar">
+            <label class="compact-field objective-field">
+              <span>方案</span>
+              <select id="objectiveSelect">
+                <option value="self_consumption">方案一：最大化新能源自发自用</option>
+                <option value="min_energy_cost">方案二：最小化总用电成本</option>
+                <option value="max_storage_profit">方案三：最大化储能套利收益</option>
+              </select>
+            </label>
+
             <label class="compact-field">
               <span>范围</span>
               <select id="rangeSelect">
@@ -139,4 +148,3 @@
     <script src="./app.js"></script>
   </body>
 </html>
-

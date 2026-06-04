@@ -183,6 +183,10 @@ h2 {
   width: 112px;
 }
 
+.objective-field select {
+  width: min(320px, 72vw);
+}
+
 button,
 .file-button {
   min-height: 38px;
@@ -358,4 +362,3 @@ td:first-child {
     grid-template-columns: 1fr;
   }
 }
-

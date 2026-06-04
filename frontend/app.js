@@ -1,14 +1,14 @@
 const sampleRows = [
-  { period: 0, pv_kw: 0, wind_kw: 20, load_kw: 50 },
-  { period: 1, pv_kw: 0, wind_kw: 25, load_kw: 45 },
-  { period: 2, pv_kw: 10, wind_kw: 25, load_kw: 40 },
-  { period: 3, pv_kw: 40, wind_kw: 20, load_kw: 45 },
-  { period: 4, pv_kw: 80, wind_kw: 15, load_kw: 50 },
-  { period: 5, pv_kw: 100, wind_kw: 15, load_kw: 55 },
-  { period: 6, pv_kw: 60, wind_kw: 20, load_kw: 60 },
-  { period: 7, pv_kw: 20, wind_kw: 30, load_kw: 65 },
-  { period: 8, pv_kw: 0, wind_kw: 35, load_kw: 70 },
-  { period: 9, pv_kw: 0, wind_kw: 30, load_kw: 60 },
+  { period: 0, pv_kw: 0, wind_kw: 20, load_kw: 50, grid_buy_price: 0.78, grid_sell_price: 0.3 },
+  { period: 1, pv_kw: 0, wind_kw: 25, load_kw: 45, grid_buy_price: 0.72, grid_sell_price: 0.3 },
+  { period: 2, pv_kw: 10, wind_kw: 25, load_kw: 40, grid_buy_price: 0.66, grid_sell_price: 0.3 },
+  { period: 3, pv_kw: 40, wind_kw: 20, load_kw: 45, grid_buy_price: 0.58, grid_sell_price: 0.3 },
+  { period: 4, pv_kw: 80, wind_kw: 15, load_kw: 50, grid_buy_price: 0.48, grid_sell_price: 0.3 },
+  { period: 5, pv_kw: 100, wind_kw: 15, load_kw: 55, grid_buy_price: 0.45, grid_sell_price: 0.3 },
+  { period: 6, pv_kw: 60, wind_kw: 20, load_kw: 60, grid_buy_price: 0.52, grid_sell_price: 0.3 },
+  { period: 7, pv_kw: 20, wind_kw: 30, load_kw: 65, grid_buy_price: 0.82, grid_sell_price: 0.3 },
+  { period: 8, pv_kw: 0, wind_kw: 35, load_kw: 70, grid_buy_price: 0.95, grid_sell_price: 0.3 },
+  { period: 9, pv_kw: 0, wind_kw: 30, load_kw: 60, grid_buy_price: 0.88, grid_sell_price: 0.3 },
 ];
 
 let sourceRows = [...sampleRows];
@@ -18,6 +18,7 @@ const elements = {
   workspace: document.querySelector(".workspace"),
   settingsPanel: document.querySelector("#settingsPanel"),
   statusText: document.querySelector("#statusText"),
+  objectiveSelect: document.querySelector("#objectiveSelect"),
   rangeSelect: document.querySelector("#rangeSelect"),
   csvInput: document.querySelector("#csvInput"),
   sampleButton: document.querySelector("#sampleButton"),
@@ -47,6 +48,7 @@ const defaults = {
 
 function getConfig() {
   return {
+    objectiveMode: elements.objectiveSelect.value,
     capacity: readNumber("capacity"),
     maxCharge: readNumber("maxCharge"),
     maxDischarge: readNumber("maxDischarge"),
@@ -85,6 +87,8 @@ function runDispatch() {
 
   let soc = config.initialSoc;
   const terminalTarget = config.initialSoc;
+  const averageBuyPrice =
+    rows.reduce((sum, row) => sum + price(row.grid_buy_price, 1), 0) / Math.max(1, rows.length);
   resultRows = rows.map((row, index) => {
     const pv = row.pv_kw * config.dtHours;
     const wind = row.wind_kw * config.dtHours;
@@ -96,16 +100,40 @@ function runDispatch() {
     let gridExport = 0;
     let gridImport = 0;
 
-    if (renewable > load) {
+    if (config.objectiveMode === "max_storage_profit") {
+      const buyPrice = price(row.grid_buy_price, 1);
+      if (buyPrice <= averageBuyPrice) {
+        const capacityRoomByInput = (config.capacity - soc) / config.chargeEff;
+        charge = Math.max(0, Math.min(config.maxCharge * config.dtHours, capacityRoomByInput));
+        soc += charge * config.chargeEff;
+      } else {
+        const availableOutput = (soc - config.minSoc) * config.dischargeEff;
+        discharge = Math.max(0, Math.min(config.maxDischarge * config.dtHours, availableOutput));
+        soc -= discharge / config.dischargeEff;
+      }
+      const netSupply = renewable + discharge;
+      const netDemand = load + charge;
+      gridExport = Math.max(0, netSupply - netDemand);
+      gridImport = Math.max(0, netDemand - netSupply);
+    } else if (renewable > load) {
       const surplus = renewable - load;
       const capacityRoomByInput = (config.capacity - soc) / config.chargeEff;
-      charge = Math.max(0, Math.min(surplus, config.maxCharge * config.dtHours, capacityRoomByInput));
+      const sellPrice = price(row.grid_sell_price, 0.3);
+      const shouldCharge =
+        config.objectiveMode === "self_consumption" || sellPrice < price(row.grid_buy_price, 1);
+      charge = shouldCharge
+        ? Math.max(0, Math.min(surplus, config.maxCharge * config.dtHours, capacityRoomByInput))
+        : 0;
       soc += charge * config.chargeEff;
       gridExport = surplus - charge;
     } else {
       const deficit = load - renewable;
       const availableOutput = (soc - config.minSoc) * config.dischargeEff;
-      discharge = Math.max(0, Math.min(deficit, config.maxDischarge * config.dtHours, availableOutput));
+      const shouldDischarge =
+        config.objectiveMode === "self_consumption" || price(row.grid_buy_price, 1) > 0;
+      discharge = shouldDischarge
+        ? Math.max(0, Math.min(deficit, config.maxDischarge * config.dtHours, availableOutput))
+        : 0;
       soc -= discharge / config.dischargeEff;
       gridImport = deficit - discharge;
     }
@@ -125,6 +153,9 @@ function runDispatch() {
       soc_end_kwh: soc,
       grid_export_kwh: gridExport,
       grid_import_kwh: gridImport,
+      grid_buy_price: price(row.grid_buy_price, 1),
+      grid_sell_price: price(row.grid_sell_price, 0.3),
+      objective_mode: config.objectiveMode,
     };
   });
 
@@ -161,6 +192,8 @@ function parseCsv(text) {
         pv_kw: Number(record.pv_kw),
         wind_kw: Number(record.wind_kw),
         load_kw: Number(record.load_kw),
+        grid_buy_price: record.grid_buy_price ? Number(record.grid_buy_price) : undefined,
+        grid_sell_price: record.grid_sell_price ? Number(record.grid_sell_price) : undefined,
       };
     })
     .filter((row) => Number.isFinite(row.pv_kw) && Number.isFinite(row.wind_kw) && Number.isFinite(row.load_kw));
@@ -182,6 +215,10 @@ function renderMetrics() {
   elements.dischargeTotal.textContent = format(
     resultRows.reduce((sum, row) => sum + Math.max(0, row.battery_energy_kwh), 0),
   );
+}
+
+function price(value, fallback) {
+  return Number.isFinite(Number(value)) ? Number(value) : fallback;
 }
 
 function renderTable() {
@@ -342,6 +379,7 @@ elements.sampleButton.addEventListener("click", () => {
 elements.runButton.addEventListener("click", runDispatch);
 elements.exportButton.addEventListener("click", exportCsv);
 elements.rangeSelect.addEventListener("change", runDispatch);
+elements.objectiveSelect.addEventListener("change", runDispatch);
 elements.resetButton.addEventListener("click", () => {
   setConfig(defaults);
   runDispatch();
@@ -357,4 +395,3 @@ elements.toggleSettingsButton.addEventListener("click", () => {
 window.addEventListener("resize", renderChart);
 setConfig(defaults);
 runDispatch();
-

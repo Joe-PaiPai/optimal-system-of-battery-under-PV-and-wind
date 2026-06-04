@@ -13,8 +13,17 @@ storage:
   dt_hours: 1
 
 objective:
+  # Options:
+  # - self_consumption: maximize renewable self-consumption.
+  # - min_energy_cost: minimize purchase cost minus sale revenue.
+  # - max_storage_profit: maximize storage charge/discharge arbitrage profit.
+  mode: self_consumption
   # Higher value means grid export is minimized before grid import.
   export_priority_weight: 1000
+  default_grid_buy_price: 1.0
+  default_grid_sell_price: 0.3
+  storage_cycle_cost: 0.0
+  export_penalty_cost: 0.0
 
 constraints:
   # true: final SOC must equal initial SOC.

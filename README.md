@@ -2,7 +2,7 @@
 
 本仓库用于存放“考虑风光资源下的储能规划系统”的项目代码、数据处理脚本、模型与相关文档。
 
-当前版本：**风光储自发自用优化调度系统 V0.1**
+当前版本：**多目标方案选择 V0.2**
 
 ## 项目结构
 
@@ -14,8 +14,11 @@
 
 优化目标：
 
-1. 优先最小化上网电量。
-2. 在上网电量尽可能小的前提下，最小化下网电量。
+运行前可以选择三种优化方案：
+
+1. 方案一：最大化新能源自发自用，优先最小化上网电量，再最小化下网电量。
+2. 方案二：最小化总用电成本，考虑下网购电成本、上网售电收益、储能循环成本和上网惩罚成本。
+3. 方案三：最大化储能套利收益，根据电价进行储能充放电收益优化。
 
 储能输出约定：
 
@@ -59,7 +62,12 @@ storage:
   dt_hours: 1
 
 objective:
+  mode: self_consumption
   export_priority_weight: 1000
+  default_grid_buy_price: 1.0
+  default_grid_sell_price: 0.3
+  storage_cycle_cost: 0.0
+  export_penalty_cost: 0.0
 
 constraints:
   enforce_terminal_soc: true
