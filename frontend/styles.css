@@ -102,6 +102,7 @@ h2 {
 .main-panel,
 .chart-panel,
 .table-panel,
+.compliance-panel,
 .metric {
   border: 1px solid var(--border);
   background: var(--panel);
@@ -261,9 +262,14 @@ canvas {
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
 
-.table-panel {
+.table-panel,
+.compliance-panel {
   border-radius: 8px;
   overflow: hidden;
+}
+
+.compliance-panel {
+  margin-bottom: 16px;
 }
 
 .table-title {
@@ -285,6 +291,10 @@ table {
   width: 100%;
   min-width: 900px;
   border-collapse: collapse;
+}
+
+.compliance-table {
+  min-width: 760px;
 }
 
 th,
@@ -318,6 +328,32 @@ td:first-child {
 
 .warning {
   color: var(--red);
+}
+
+.pass-badge,
+.fail-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 54px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pass-badge {
+  background: var(--green-soft);
+  color: #047857;
+}
+
+.fail-badge {
+  background: #fee2e2;
+  color: var(--red);
+}
+
+.ratio-value {
+  font-weight: 800;
 }
 
 @media (max-width: 900px) {

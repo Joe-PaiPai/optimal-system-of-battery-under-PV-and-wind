@@ -32,6 +32,8 @@ const elements = {
   importTotal: document.querySelector("#importTotal"),
   chargeTotal: document.querySelector("#chargeTotal"),
   dischargeTotal: document.querySelector("#dischargeTotal"),
+  complianceBody: document.querySelector("#complianceBody"),
+  complianceStatus: document.querySelector("#complianceStatus"),
   chart: document.querySelector("#dispatchChart"),
 };
 
@@ -201,6 +203,7 @@ function parseCsv(text) {
 
 function renderAll() {
   renderMetrics();
+  renderCompliance();
   renderTable();
   renderChart();
 }
@@ -217,8 +220,64 @@ function renderMetrics() {
   );
 }
 
+function renderCompliance() {
+  const total = (field) => resultRows.reduce((sum, row) => sum + row[field], 0);
+  const renewableTotal = resultRows.reduce((sum, row) => sum + row.pv_kwh + row.wind_kwh, 0);
+  const loadTotal = total("load_kwh");
+  const exportTotal = total("grid_export_kwh");
+  const selfUseEnergy = Math.max(0, renewableTotal - exportTotal);
+  const items = [
+    {
+      category: "自发自用电量",
+      requirement: "/总可用发电量",
+      standard: ">= 60%",
+      value: safeRatio(selfUseEnergy, renewableTotal),
+      passed: safeRatio(selfUseEnergy, renewableTotal) >= 0.6,
+    },
+    {
+      category: "自发自用电量",
+      requirement: "/总用电量",
+      standard: ">= 30%",
+      value: safeRatio(selfUseEnergy, loadTotal),
+      passed: safeRatio(selfUseEnergy, loadTotal) >= 0.3,
+    },
+    {
+      category: "上网电量",
+      requirement: "/总可用发电量",
+      standard: "<= 20%",
+      value: safeRatio(exportTotal, renewableTotal),
+      passed: safeRatio(exportTotal, renewableTotal) <= 0.2,
+    },
+  ];
+
+  const passedCount = items.filter((item) => item.passed).length;
+  elements.complianceStatus.textContent = `${passedCount} / ${items.length} 达标`;
+  elements.complianceBody.innerHTML = items
+    .map(
+      (item) => `
+        <tr>
+          <td>${item.category}</td>
+          <td>${item.requirement}</td>
+          <td>${item.standard}</td>
+          <td class="ratio-value">${formatPercent(item.value)}</td>
+          <td><span class="${item.passed ? "pass-badge" : "fail-badge"}">${item.passed ? "达标" : "未达标"}</span></td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
 function price(value, fallback) {
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+function safeRatio(numerator, denominator) {
+  if (!denominator) return 0;
+  return numerator / denominator;
+}
+
+function formatPercent(value) {
+  return `${(value * 100).toFixed(0)}%`;
 }
 
 function renderTable() {
