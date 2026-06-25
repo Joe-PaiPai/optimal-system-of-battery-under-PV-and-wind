@@ -1,6 +1,6 @@
 # 考虑风光资源下的储能规划系统
 
-当前版本：**统一方案输入 V0.4.1**
+当前版本：**CSV表头兼容 V0.4.2**
 
 本仓库用于风电、光伏、负荷和储能系统的优化调度与储能规划分析。
 
@@ -57,10 +57,22 @@ E_cap >= 2 * P_cap
 pv_kw,wind_kw,load_kw
 ```
 
+也支持 MW 表头，导入后会自动换算为 kW：
+
+```csv
+pv_mw,wind_mw,load_mw
+```
+
 可选列：
 
 ```csv
 period,grid_buy_price,grid_sell_price
+```
+
+电价列也兼容：
+
+```csv
+grid_buy_p,grid_sell_price
 ```
 
 示例：
@@ -114,3 +126,4 @@ http://localhost:8000/frontend/index.html
 - `V0.3.1`：迁移包和交接文档
 - `V0.4`：容量功率规划
 - `V0.4.1`：统一方案输入
+- `V0.4.2`：CSV表头兼容

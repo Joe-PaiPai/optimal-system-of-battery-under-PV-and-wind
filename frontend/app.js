@@ -255,9 +255,11 @@ function validateConfig(config) {
 function parseCsv(text) {
   const lines = text.trim().split(/\r?\n/);
   const headers = lines.shift().split(",").map((item) => item.trim());
-  const required = ["pv_kw", "wind_kw", "load_kw"];
-  const missing = required.filter((name) => !headers.includes(name));
-  if (missing.length) throw new Error(`缺少列：${missing.join(", ")}`);
+  const columnMap = resolveCsvColumns(headers);
+  const missing = ["pv", "wind", "load"].filter((name) => !columnMap[name]);
+  if (missing.length) {
+    throw new Error("缺少列：pv_kw/pv_mw, wind_kw/wind_mw, load_kw/load_mw");
+  }
 
   return lines
     .filter(Boolean)
@@ -266,14 +268,62 @@ function parseCsv(text) {
       const record = Object.fromEntries(headers.map((header, i) => [header, values[i]]));
       return {
         period: record.period ? Number(record.period) : index,
-        pv_kw: Number(record.pv_kw),
-        wind_kw: Number(record.wind_kw),
-        load_kw: Number(record.load_kw),
-        grid_buy_price: record.grid_buy_price ? Number(record.grid_buy_price) : undefined,
-        grid_sell_price: record.grid_sell_price ? Number(record.grid_sell_price) : undefined,
+        pv_kw: readMappedNumber(record, columnMap.pv),
+        wind_kw: readMappedNumber(record, columnMap.wind),
+        load_kw: readMappedNumber(record, columnMap.load),
+        grid_buy_price: columnMap.gridBuy ? readMappedNumber(record, columnMap.gridBuy) : undefined,
+        grid_sell_price: columnMap.gridSell ? readMappedNumber(record, columnMap.gridSell) : undefined,
       };
     })
     .filter((row) => Number.isFinite(row.pv_kw) && Number.isFinite(row.wind_kw) && Number.isFinite(row.load_kw));
+}
+
+function resolveCsvColumns(headers) {
+  return {
+    pv: findColumn(headers, [
+      ["pv_kw", 1],
+      ["pv_mw", 1000],
+      ["光伏_kw", 1],
+      ["光伏_mw", 1000],
+      ["光伏出力", 1],
+      ["光伏功率", 1],
+    ]),
+    wind: findColumn(headers, [
+      ["wind_kw", 1],
+      ["wind_mw", 1000],
+      ["风电_kw", 1],
+      ["风电_mw", 1000],
+      ["风电出力", 1],
+      ["风电功率", 1],
+    ]),
+    load: findColumn(headers, [
+      ["load_kw", 1],
+      ["load_mw", 1000],
+      ["负荷_kw", 1],
+      ["负荷_mw", 1000],
+      ["负荷", 1],
+      ["负荷功率", 1],
+    ]),
+    gridBuy: findColumn(headers, [["grid_buy_price", 1], ["grid_buy_p", 1], ["buy_price", 1], ["购电价格", 1]]),
+    gridSell: findColumn(headers, [["grid_sell_price", 1], ["grid_sell_p", 1], ["sell_price", 1], ["售电价格", 1]]),
+  };
+}
+
+function findColumn(headers, candidates) {
+  const normalizedHeaders = headers.map((header) => normalizeHeader(header));
+  for (const [candidate, multiplier] of candidates) {
+    const index = normalizedHeaders.indexOf(normalizeHeader(candidate));
+    if (index !== -1) return { name: headers[index], multiplier };
+  }
+  return null;
+}
+
+function normalizeHeader(header) {
+  return String(header).trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+function readMappedNumber(record, column) {
+  return Number(record[column.name]) * column.multiplier;
 }
 
 function renderAll() {
