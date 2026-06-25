@@ -13,10 +13,10 @@ const sampleRows = [
 
 let sourceRows = [...sampleRows];
 let resultRows = [];
+let planningResult = null;
 
 const elements = {
   workspace: document.querySelector(".workspace"),
-  settingsPanel: document.querySelector("#settingsPanel"),
   statusText: document.querySelector("#statusText"),
   objectiveSelect: document.querySelector("#objectiveSelect"),
   rangeSelect: document.querySelector("#rangeSelect"),
@@ -32,6 +32,10 @@ const elements = {
   importTotal: document.querySelector("#importTotal"),
   chargeTotal: document.querySelector("#chargeTotal"),
   dischargeTotal: document.querySelector("#dischargeTotal"),
+  plannedCapacity: document.querySelector("#plannedCapacity"),
+  plannedPower: document.querySelector("#plannedPower"),
+  plannedDuration: document.querySelector("#plannedDuration"),
+  plannedCost: document.querySelector("#plannedCost"),
   complianceBody: document.querySelector("#complianceBody"),
   complianceStatus: document.querySelector("#complianceStatus"),
   chart: document.querySelector("#dispatchChart"),
@@ -46,6 +50,8 @@ const defaults = {
   chargeEff: 0.95,
   dischargeEff: 0.95,
   dtHours: 1,
+  capacityCost: 1,
+  powerCost: 1,
 };
 
 function getConfig() {
@@ -59,6 +65,8 @@ function getConfig() {
     chargeEff: readNumber("chargeEff"),
     dischargeEff: readNumber("dischargeEff"),
     dtHours: readNumber("dtHours"),
+    capacityCost: readNumber("capacityCost"),
+    powerCost: readNumber("powerCost"),
   };
 }
 
@@ -87,11 +95,24 @@ function runDispatch() {
     return;
   }
 
+  if (config.objectiveMode === "capacity_planning") {
+    runCapacityPlanning(rows, config);
+    return;
+  }
+
+  planningResult = null;
+  resultRows = simulateDispatch(rows, config);
+  renderAll();
+  elements.statusText.textContent = `${resultRows.length} 个时段`;
+}
+
+function simulateDispatch(rows, config) {
   let soc = config.initialSoc;
   const terminalTarget = config.initialSoc;
   const averageBuyPrice =
     rows.reduce((sum, row) => sum + price(row.grid_buy_price, 1), 0) / Math.max(1, rows.length);
-  resultRows = rows.map((row, index) => {
+
+  return rows.map((row, index) => {
     const pv = row.pv_kw * config.dtHours;
     const wind = row.wind_kw * config.dtHours;
     const load = row.load_kw * config.dtHours;
@@ -120,9 +141,8 @@ function runDispatch() {
     } else if (renewable > load) {
       const surplus = renewable - load;
       const capacityRoomByInput = (config.capacity - soc) / config.chargeEff;
-      const sellPrice = price(row.grid_sell_price, 0.3);
       const shouldCharge =
-        config.objectiveMode === "self_consumption" || sellPrice < price(row.grid_buy_price, 1);
+        config.objectiveMode === "self_consumption" || price(row.grid_sell_price, 0.3) < price(row.grid_buy_price, 1);
       charge = shouldCharge
         ? Math.max(0, Math.min(surplus, config.maxCharge * config.dtHours, capacityRoomByInput))
         : 0;
@@ -131,8 +151,7 @@ function runDispatch() {
     } else {
       const deficit = load - renewable;
       const availableOutput = (soc - config.minSoc) * config.dischargeEff;
-      const shouldDischarge =
-        config.objectiveMode === "self_consumption" || price(row.grid_buy_price, 1) > 0;
+      const shouldDischarge = config.objectiveMode === "self_consumption" || price(row.grid_buy_price, 1) > 0;
       discharge = shouldDischarge
         ? Math.max(0, Math.min(deficit, config.maxDischarge * config.dtHours, availableOutput))
         : 0;
@@ -145,24 +164,80 @@ function runDispatch() {
       soc = terminalTarget;
     }
 
-    return {
-      period: row.period ?? index,
-      pv_kwh: pv,
-      wind_kwh: wind,
-      load_kwh: load,
-      battery_energy_kwh: discharge - charge,
-      soc_start_kwh: socStart,
-      soc_end_kwh: soc,
-      grid_export_kwh: gridExport,
-      grid_import_kwh: gridImport,
-      grid_buy_price: price(row.grid_buy_price, 1),
-      grid_sell_price: price(row.grid_sell_price, 0.3),
-      objective_mode: config.objectiveMode,
-    };
+    return buildResultRow(row, index, pv, wind, load, discharge - charge, charge, discharge, socStart, soc, gridExport, gridImport, config.objectiveMode);
   });
+}
 
+function runCapacityPlanning(rows, config) {
+  const capacityUpper = config.capacity;
+  const powerUpper = Math.min(config.maxCharge, config.maxDischarge);
+  const capacityStep = Math.max(1, capacityUpper / 80);
+  const powerStep = Math.max(1, powerUpper / 80);
+  let best = null;
+
+  for (let power = powerStep; power <= powerUpper + 1e-9; power += powerStep) {
+    const minCapacity = Math.max(2 * power, capacityStep);
+    for (let capacity = minCapacity; capacity <= capacityUpper + 1e-9; capacity += capacityStep) {
+      const trialConfig = {
+        ...config,
+        objectiveMode: "self_consumption",
+        capacity,
+        maxCharge: power,
+        maxDischarge: power,
+        initialSoc: 0,
+        minSoc: 0,
+      };
+      const rowsOut = simulateDispatch(rows, trialConfig);
+      const summary = summarize(rowsOut);
+      const feasible =
+        summary.selfUseToRenewable >= 0.6 &&
+        summary.selfUseToLoad >= 0.3 &&
+        summary.exportToRenewable <= 0.2;
+      if (!feasible) continue;
+
+      const cost = config.capacityCost * capacity + config.powerCost * power;
+      if (!best || cost < best.cost || (cost === best.cost && capacity < best.capacity)) {
+        best = { capacity, power, cost, rows: rowsOut, summary };
+      }
+    }
+  }
+
+  if (!best) {
+    planningResult = null;
+    resultRows = [];
+    renderAll();
+    elements.statusText.innerHTML = `<span class="warning">在当前容量/功率上限内无可行配置</span>`;
+    return;
+  }
+
+  planningResult = {
+    capacity: best.capacity,
+    power: best.power,
+    duration: best.capacity / best.power,
+    cost: best.cost,
+  };
+  resultRows = best.rows.map((row) => ({ ...row, objective_mode: "capacity_planning" }));
   renderAll();
-  elements.statusText.textContent = `${resultRows.length} 个时段`;
+  elements.statusText.textContent = `规划完成：${format(best.capacity)} kWh / ${format(best.power)} kW`;
+}
+
+function buildResultRow(row, index, pv, wind, load, batteryEnergy, charge, discharge, socStart, socEnd, gridExport, gridImport, mode) {
+  return {
+    period: row.period ?? index,
+    pv_kwh: pv,
+    wind_kwh: wind,
+    load_kwh: load,
+    battery_energy_kwh: batteryEnergy,
+    charge_energy_kwh: charge,
+    discharge_energy_kwh: discharge,
+    soc_start_kwh: socStart,
+    soc_end_kwh: socEnd,
+    grid_export_kwh: gridExport,
+    grid_import_kwh: gridImport,
+    grid_buy_price: price(row.grid_buy_price, 1),
+    grid_sell_price: price(row.grid_sell_price, 0.3),
+    objective_mode: mode,
+  };
 }
 
 function validateConfig(config) {
@@ -171,8 +246,11 @@ function validateConfig(config) {
   if (config.maxCharge <= 0 || config.maxDischarge <= 0) errors.push("功率需大于 0");
   if (config.chargeEff <= 0 || config.chargeEff > 1) errors.push("充电效率需在 0-1");
   if (config.dischargeEff <= 0 || config.dischargeEff > 1) errors.push("放电效率需在 0-1");
-  if (config.minSoc < 0 || config.initialSoc < config.minSoc || config.initialSoc > config.capacity) {
-    errors.push("SOC 参数不合法");
+  if (config.capacityCost < 0 || config.powerCost < 0) errors.push("成本权重不能为负");
+  if (config.objectiveMode !== "capacity_planning") {
+    if (config.minSoc < 0 || config.initialSoc < config.minSoc || config.initialSoc > config.capacity) {
+      errors.push("SOC 参数不合法");
+    }
   }
   return errors;
 }
@@ -209,44 +287,40 @@ function renderAll() {
 }
 
 function renderMetrics() {
-  const total = (field) => resultRows.reduce((sum, row) => sum + row[field], 0);
-  elements.exportTotal.textContent = format(total("grid_export_kwh"));
-  elements.importTotal.textContent = format(total("grid_import_kwh"));
-  elements.chargeTotal.textContent = format(
-    resultRows.reduce((sum, row) => sum + Math.max(0, -row.battery_energy_kwh), 0),
-  );
-  elements.dischargeTotal.textContent = format(
-    resultRows.reduce((sum, row) => sum + Math.max(0, row.battery_energy_kwh), 0),
-  );
+  const summary = summarize(resultRows);
+  elements.exportTotal.textContent = format(summary.exportTotal);
+  elements.importTotal.textContent = format(summary.importTotal);
+  elements.chargeTotal.textContent = format(summary.chargeTotal);
+  elements.dischargeTotal.textContent = format(summary.dischargeTotal);
+  elements.plannedCapacity.textContent = planningResult ? format(planningResult.capacity) : "--";
+  elements.plannedPower.textContent = planningResult ? format(planningResult.power) : "--";
+  elements.plannedDuration.textContent = planningResult ? format(planningResult.duration) : "--";
+  elements.plannedCost.textContent = planningResult ? format(planningResult.cost) : "--";
 }
 
 function renderCompliance() {
-  const total = (field) => resultRows.reduce((sum, row) => sum + row[field], 0);
-  const renewableTotal = resultRows.reduce((sum, row) => sum + row.pv_kwh + row.wind_kwh, 0);
-  const loadTotal = total("load_kwh");
-  const exportTotal = total("grid_export_kwh");
-  const selfUseEnergy = Math.max(0, renewableTotal - exportTotal);
+  const summary = summarize(resultRows);
   const items = [
     {
       category: "自发自用电量",
       requirement: "/总可用发电量",
       standard: ">= 60%",
-      value: safeRatio(selfUseEnergy, renewableTotal),
-      passed: safeRatio(selfUseEnergy, renewableTotal) >= 0.6,
+      value: summary.selfUseToRenewable,
+      passed: summary.selfUseToRenewable >= 0.6,
     },
     {
       category: "自发自用电量",
       requirement: "/总用电量",
       standard: ">= 30%",
-      value: safeRatio(selfUseEnergy, loadTotal),
-      passed: safeRatio(selfUseEnergy, loadTotal) >= 0.3,
+      value: summary.selfUseToLoad,
+      passed: summary.selfUseToLoad >= 0.3,
     },
     {
       category: "上网电量",
       requirement: "/总可用发电量",
       standard: "<= 20%",
-      value: safeRatio(exportTotal, renewableTotal),
-      passed: safeRatio(exportTotal, renewableTotal) <= 0.2,
+      value: summary.exportToRenewable,
+      passed: summary.exportToRenewable <= 0.2,
     },
   ];
 
@@ -267,17 +341,31 @@ function renderCompliance() {
     .join("");
 }
 
-function price(value, fallback) {
-  return Number.isFinite(Number(value)) ? Number(value) : fallback;
-}
-
-function safeRatio(numerator, denominator) {
-  if (!denominator) return 0;
-  return numerator / denominator;
-}
-
-function formatPercent(value) {
-  return `${(value * 100).toFixed(0)}%`;
+function summarize(rows) {
+  const total = (field) => rows.reduce((sum, row) => sum + (Number(row[field]) || 0), 0);
+  const renewableTotal = rows.reduce((sum, row) => sum + row.pv_kwh + row.wind_kwh, 0);
+  const loadTotal = total("load_kwh");
+  const exportTotal = total("grid_export_kwh");
+  const importTotal = total("grid_import_kwh");
+  const chargeTotal = rows.reduce((sum, row) => sum + Math.max(0, -row.battery_energy_kwh), 0);
+  const dischargeTotal = rows.reduce((sum, row) => sum + Math.max(0, row.battery_energy_kwh), 0);
+  const selfUseEnergy = rows.reduce((sum, row) => {
+    const discharge = Math.max(0, row.battery_energy_kwh);
+    const renewableLoad = Math.max(0, row.load_kwh - discharge - row.grid_import_kwh);
+    return sum + renewableLoad + discharge;
+  }, 0);
+  return {
+    renewableTotal,
+    loadTotal,
+    exportTotal,
+    importTotal,
+    chargeTotal,
+    dischargeTotal,
+    selfUseEnergy,
+    selfUseToRenewable: safeRatio(selfUseEnergy, renewableTotal),
+    selfUseToLoad: safeRatio(selfUseEnergy, loadTotal),
+    exportToRenewable: safeRatio(exportTotal, renewableTotal),
+  };
 }
 
 function renderTable() {
@@ -397,6 +485,19 @@ function drawLegend(ctx, width) {
   });
 }
 
+function price(value, fallback) {
+  return Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+function safeRatio(numerator, denominator) {
+  if (!denominator) return 0;
+  return numerator / denominator;
+}
+
+function formatPercent(value) {
+  return `${(value * 100).toFixed(0)}%`;
+}
+
 function format(value) {
   return Number(value).toFixed(2).replace(/\.00$/, "");
 }
@@ -412,7 +513,7 @@ function exportCsv() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "dispatch_result.csv";
+  link.download = planningResult ? "capacity_planning_result.csv" : "dispatch_result.csv";
   link.click();
   URL.revokeObjectURL(url);
 }

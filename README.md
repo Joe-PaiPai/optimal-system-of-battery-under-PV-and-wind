@@ -1,102 +1,120 @@
 # 考虑风光资源下的储能规划系统
 
-本仓库用于存放“考虑风光资源下的储能规划系统”的项目代码、数据处理脚本、模型与相关文档。
+当前版本：**容量功率规划 V0.4**
 
-当前版本：**配储项目达标评估 V0.3**
+本仓库用于风电、光伏、负荷和储能系统的优化调度与储能规划分析。
 
-## 项目结构
+## 功能概览
 
-后续可按实际开发内容补充目录说明。
+- 给定储能容量和功率，计算逐时储能充放电计划。
+- 支持三种运行目标：
+  - 方案一：最大化新能源自发自用
+  - 方案二：最小化总用电成本
+  - 方案三：最大化储能套利收益
+- 新增方案四：按指标约束计算最小储能容量与功率。
+- 前端可导入 CSV，展示指标、图表、调度结果和达标情况。
 
-## 储能优化调度第一版
+## 方案四：容量功率规划
 
-当前实现位于 `src/storage_dispatch_milp.py`，采用 MILP 计算风光储系统的最佳充放电计划。
+方案四用于计算满足指标的最小储能配置。
 
-优化目标：
+目标函数：
 
-运行前可以选择三种优化方案：
+```text
+min Z = C_E * E_cap + C_P * P_cap
+```
 
-1. 方案一：最大化新能源自发自用，优先最小化上网电量，再最小化下网电量。
-2. 方案二：最小化总用电成本，考虑下网购电成本、上网售电收益、储能循环成本和上网惩罚成本。
-3. 方案三：最大化储能套利收益，根据电价进行储能充放电收益优化。
+其中：
 
-储能输出约定：
+```text
+E_cap = 储能容量，kWh
+P_cap = 储能功率，kW
+C_E = 容量成本权重
+C_P = 功率成本权重
+```
 
-- `battery_energy_kwh < 0`：储能充电
-- `battery_energy_kwh > 0`：储能放电
-- `battery_energy_kwh = 0`：储能不动作
+三个指标作为硬约束：
 
-输入 CSV 需要包含以下列：
+```text
+1. 自发自用电量 / 总可用发电量 >= 60%
+2. 自发自用电量 / 总用电量 >= 30%
+3. 上网电量 / 总可用发电量 <= 20%
+```
+
+至少 2 小时储能系统：
+
+```text
+E_cap >= 2 * P_cap
+```
+
+前端中：
+
+- `储能容量/容量上限 kWh`：方案四中作为容量搜索上限。
+- `最大充电功率/功率上限 kW`：方案四中作为功率搜索上限。
+- `容量成本权重`、`功率成本权重`：用于目标函数。
+
+## 输入 CSV
+
+必需列：
 
 ```csv
 pv_kw,wind_kw,load_kw
 ```
 
-运行示例：
+可选列：
 
-```bash
-pip install -r requirements.txt
-python examples/run_sample.py
+```csv
+period,grid_buy_price,grid_sell_price
+```
+
+示例：
+
+```csv
+period,pv_kw,wind_kw,load_kw,grid_buy_price,grid_sell_price
+0,0,20,50,0.78,0.30
+1,0,25,45,0.72,0.30
+```
+
+## 后端运行
+
+安装依赖：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 使用配置文件运行：
 
-```bash
-python src/storage_dispatch_milp.py --config config/sample_config.yml
+```powershell
+.\.venv\Scripts\python.exe src\storage_dispatch_milp.py --config config\sample_config.yml
 ```
 
-配置文件示例：
+运行示例：
 
-```yaml
-input_csv: ../examples/sample_timeseries.csv
-output_csv: ../outputs/sample_result.csv
-
-storage:
-  capacity_kwh: 100
-  max_charge_kw: 50
-  max_discharge_kw: 50
-  initial_soc_kwh: 50
-  min_soc_kwh: 10
-  charge_efficiency: 0.95
-  discharge_efficiency: 0.95
-  dt_hours: 1
-
-objective:
-  mode: self_consumption
-  export_priority_weight: 1000
-  default_grid_buy_price: 1.0
-  default_grid_sell_price: 0.3
-  storage_cycle_cost: 0.0
-  export_penalty_cost: 0.0
-
-constraints:
-  enforce_terminal_soc: true
-```
-
-也可以直接使用命令行：
-
-```bash
-python src/storage_dispatch_milp.py ^
-  --input examples/sample_timeseries.csv ^
-  --output examples/sample_result.csv ^
-  --capacity-kwh 100 ^
-  --max-charge-kw 50 ^
-  --max-discharge-kw 50 ^
-  --initial-soc-kwh 50 ^
-  --min-soc-kwh 10 ^
-  --dt-hours 1
+```powershell
+.\.venv\Scripts\python.exe examples\run_sample.py
 ```
 
 ## 前端页面
 
-前端位于 `frontend/index.html`，可以直接打开，也可以启动本地静态服务：
+启动本地服务：
 
-```bash
-python -m http.server 8000
+```powershell
+.\.venv\Scripts\python.exe -m http.server 8000
 ```
 
-然后访问：
+访问：
 
 ```text
 http://localhost:8000/frontend/index.html
 ```
+
+## 版本记录
+
+- `V0.1`：风光储自发自用优化调度系统原型
+- `V0.2`：多目标方案选择
+- `V0.3`：配储项目达标评估
+- `V0.3.1`：迁移包和交接文档
+- `V0.4`：容量功率规划
+
