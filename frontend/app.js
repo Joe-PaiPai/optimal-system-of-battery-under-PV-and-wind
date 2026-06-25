@@ -50,8 +50,6 @@ const defaults = {
   chargeEff: 0.95,
   dischargeEff: 0.95,
   dtHours: 1,
-  capacityCost: 1,
-  powerCost: 1,
 };
 
 function getConfig() {
@@ -65,8 +63,8 @@ function getConfig() {
     chargeEff: readNumber("chargeEff"),
     dischargeEff: readNumber("dischargeEff"),
     dtHours: readNumber("dtHours"),
-    capacityCost: readNumber("capacityCost"),
-    powerCost: readNumber("powerCost"),
+    capacityCost: 1,
+    powerCost: 1,
   };
 }
 
@@ -246,7 +244,6 @@ function validateConfig(config) {
   if (config.maxCharge <= 0 || config.maxDischarge <= 0) errors.push("功率需大于 0");
   if (config.chargeEff <= 0 || config.chargeEff > 1) errors.push("充电效率需在 0-1");
   if (config.dischargeEff <= 0 || config.dischargeEff > 1) errors.push("放电效率需在 0-1");
-  if (config.capacityCost < 0 || config.powerCost < 0) errors.push("成本权重不能为负");
   if (config.objectiveMode !== "capacity_planning") {
     if (config.minSoc < 0 || config.initialSoc < config.minSoc || config.initialSoc > config.capacity) {
       errors.push("SOC 参数不合法");
